@@ -1,0 +1,67 @@
+import requests
+from bs4 import BeautifulSoup
+import pandas as pd
+
+def extract_data_from_page(url):
+    """Extracts product data from a single page."""
+    try:
+        response = requests.get(url)
+        response.raise_for_status()  # Raise an exception for bad status codes (4xx or 5xx)
+        soup = BeautifulSoup(response.content, 'html.parser')
+
+        products = []
+        product_elements = soup.find_all('div', class_='grid-product__content')
+
+        for product in product_elements:
+            try:
+                name = product.find('div', class_='grid-product__title').text.strip()
+                price = product.find('div', class_='grid-product__price').text.strip()
+                sku_element = product.find('div', class_='product-meta__sku')
+                sku = sku_element.find('span', class_='product-meta__sku-number').text.strip() if sku_element else None
+                products.append({
+                    'Naziv artikla': name,
+                    'Šifra': sku,
+                    'Cijena': price
+                })
+
+            except AttributeError as e:  # Catch specific errors. This will make debugging much easier.
+                print(f"Error extracting product data: {e}")
+                print("Product HTML:", str(product))  # Print the problematic HTML for debugging
+
+        return products
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching URL {url}: {e}")
+        return []  # Return an empty list if the page fails to load
+
+
+
+def scrape_all_pages(base_url, max_pages=50): # Default max pages in the function
+    """Scrapes product data from multiple pages."""
+    all_products = []
+    for page in range(1, max_pages + 1):
+        url = f"{base_url}&page={page}"
+        print(f"Scraping page {page}...")
+        products = extract_data_from_page(url)
+        if products:
+            all_products.extend(products)
+        else:  # Stop if no products are found on a page.  Usually indicates last page or a problem with the scraper
+            print("No products found on this page. Stopping.")
+            break
+    return all_products
+
+def save_to_excel(data, output_file):
+    """Saves product data to an Excel file."""
+    df = pd.DataFrame(data)
+    df.to_excel(output_file, index=False)
+
+if __name__ == "__main__":
+    BASE_URL = "https://www.neo-dens.hr/pages/search-results-page?collection=ordinacija"
+    OUTPUT_FILE = "neo_dens_artikli.xlsx"
+
+    all_products = scrape_all_pages(BASE_URL)  # No need to specify MAX_PAGES now that it's in function
+
+    if all_products:  # Check if any products were scraped before saving to excel
+        save_to_excel(all_products, OUTPUT_FILE)
+        print(f"Scraping complete. Data saved to {OUTPUT_FILE}")
+    else:
+        print("No products were scraped.  The Excel file was not created.")
